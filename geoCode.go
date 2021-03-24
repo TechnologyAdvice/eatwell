@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
+//next four functions are just for google's api, touching these will probably break authentication for google sheets
 // getClient uses a Context and Config to retrieve a Token
 // then generate a Client. It returns the generated Client.
 func getClient(ctx context.Context, config *oauth2.Config) *http.Client {
@@ -118,6 +119,16 @@ func main() {
 	//rangeData := "sheet1!A1:M400"
 	//valueInputOption := "" // TODO: Update placeholder value.
 
+	//clears google sheet for new data to make sure old data doesn't stick around
+	range_clear := "sheet1!A1:M40000"
+	fmt.Printf(range_clear)
+	rb_clear := &sheets.ClearValuesRequest{}
+	resp_clear, err := sheetsService.Spreadsheets.Values.Clear(spreadsheetId, range_clear, rb_clear).Context(ctx).Do()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%#v\n", resp_clear)
+
 	//gets order count to use as limit
 	count, err := http.Get("https://d3e1e0e9f9d7003f026155ed0cf3f35d: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@eatwellnash.myshopify.com/admin/api/2021-01/orders/count.json")
 	if err != nil {
@@ -137,7 +148,7 @@ func main() {
 	var req *http.Response
 	var responseData []byte
 	var er error
-	req, er = http.Get("https://d3e1e0e9f9d7003f026155ed0cf3f35d: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@eatwellnash.myshopify.com/admin/api/2021-01/orders.json?limit=250&fields=id,shipping_address")
+	req, er = http.Get("https://d3e1e0e9f9d7003f026155ed0cf3f35d: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@eatwellnash.myshopify.com/admin/api/2021-01/orders.json?limit=25&since_id=0&fields=id,shipping_address")
 	if er != nil {
 		fmt.Print(err.Error())
 		os.Exit(1)
@@ -160,17 +171,42 @@ func main() {
 
 	//Loops through the struct and assigns it to the variable
 	var n int
+	var y int
+	y = len(responseObject.Order)
+	fmt.Println(y)
 	n = 0
 	var lastid int
 	var url string
 	for i := 0; i < orderCount.Count; i++ {
 
-		if i == 249 || i == 499 || i == 749 {
+		if n == (y - 1) {
 
-			y := len(responseObject.Order)
+			sheetnum := fmt.Sprintf("sheet1!A%d:M40000", i+2) //turn into string??
+			rangeData := sheetnum
+			fmt.Println(responseObject.Order[n].Address.Address1, ",", responseObject.Order[n].Address.Address2, ",", responseObject.Order[n].Address.City, ",", responseObject.Order[n].Address.State, ",", responseObject.Order[n].Address.Country, ",", responseObject.Order[n].Address.Zip, ",", responseObject.Order[n].Address.Latitude, ",", responseObject.Order[n].Address.Longitude)
+
+			values := [][]interface{}{{responseObject.Order[n].Address.Address1, responseObject.Order[n].Address.Address2, responseObject.Order[n].Address.City, responseObject.Order[n].Address.State, responseObject.Order[n].Address.Country, responseObject.Order[n].Address.Zip, responseObject.Order[n].Address.Latitude, responseObject.Order[n].Address.Longitude}}
+			fmt.Println(rangeData)
+			fmt.Println(values)
+			rb := &sheets.BatchUpdateValuesRequest{
+				ValueInputOption: "USER_ENTERED",
+			}
+			rb.Data = append(rb.Data, &sheets.ValueRange{
+				Range:  rangeData,
+				Values: values,
+			})
+			_, err = sheetsService.Spreadsheets.Values.BatchUpdate(spreadsheetId, rb).Context(ctx).Do()
+			if err != nil {
+				log.Fatal(err)
+
+			}
+			i++
+
+			y = len(responseObject.Order)
 			fmt.Println(y)
-			lastid = responseObject.Order[y-2].ID
-			url = fmt.Sprintf("https://d3e1e0e9f9d7003f026155ed0cf3f35d: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@eatwellnash.myshopify.com/admin/api/2021-01/orders.json?limit=250&since_id=%d&fields=id,shipping_address", lastid)
+			lastid = responseObject.Order[y-1].ID
+			url = fmt.Sprintf("https://d3e1e0e9f9d7003f026155ed0cf3f35d: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@eatwellnash.myshopify.com/admin/api/2021-01/orders.json?limit=25&since_id=%d&fields=id,shipping_address", lastid)
+			fmt.Println(url)
 			req, er = http.Get(url)
 			if er != nil {
 				fmt.Print(err.Error())
@@ -214,4 +250,5 @@ func main() {
 		n = n + 1
 
 	}
+	fmt.Print("I'm all done!")
 }
